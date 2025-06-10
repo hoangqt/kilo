@@ -887,6 +887,16 @@ void editorRefreshScreen(void) {
 
     abAppend(&ab,"\x1b[?25l",6); /* Hide cursor. */
     abAppend(&ab,"\x1b[H",3); /* Go home. */
+    int lineno_width = 1;
+    if (E.numrows > 0) {
+        int max_lineno = E.numrows;
+        lineno_width = 1;
+        while (max_lineno >= 10) {
+            lineno_width++;
+            max_lineno /= 10;
+        }
+    }
+    lineno_width += 2; // 1 space padding after number
     for (y = 0; y < E.screenrows; y++) {
         int filerow = E.rowoff+y;
 
@@ -912,8 +922,14 @@ void editorRefreshScreen(void) {
 
         int len = r->rsize - E.coloff;
         int current_color = -1;
+        // Print line number
+        char lnbuf[16];
+        int lnbuflen = snprintf(lnbuf, sizeof(lnbuf), "%*d ", lineno_width-1, filerow+1);
+        abAppend(&ab, "\x1b[90m", 5); // dark gray color for line numbers
+        abAppend(&ab, lnbuf, lnbuflen);
+        abAppend(&ab, "\x1b[39m", 5); // reset color
         if (len > 0) {
-            if (len > E.screencols) len = E.screencols;
+            if (len > E.screencols - lineno_width) len = E.screencols - lineno_width;
             char *c = r->render+E.coloff;
             unsigned char *hl = r->hl+E.coloff;
             int j;
@@ -981,7 +997,7 @@ void editorRefreshScreen(void) {
      * at which the cursor is displayed may be different compared to 'E.cx'
      * because of TABs. */
     int j;
-    int cx = 1;
+    int cx = lineno_width + 1; // account for line number margin
     int filerow = E.rowoff+E.cy;
     erow *row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
     if (row) {
