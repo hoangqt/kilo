@@ -928,6 +928,8 @@ void editorRefreshScreen(void) {
         abAppend(&ab, "\x1b[90m", 5); // dark gray color for line numbers
         abAppend(&ab, lnbuf, lnbuflen);
         abAppend(&ab, "\x1b[39m", 5); // reset color
+        // Highlight active line
+        if (y == E.cy) abAppend(&ab, "\x1b[7m", 4); // reverse video
         if (len > 0) {
             if (len > E.screencols - lineno_width) len = E.screencols - lineno_width;
             char *c = r->render+E.coloff;
@@ -962,6 +964,7 @@ void editorRefreshScreen(void) {
             }
         }
         abAppend(&ab,"\x1b[39m",5);
+        if (y == E.cy) abAppend(&ab, "\x1b[0m", 4); // reset after active line
         abAppend(&ab,"\x1b[0K",4);
         abAppend(&ab,"\r\n",2);
     }
