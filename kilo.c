@@ -890,8 +890,8 @@ void editorRefreshScreen(void) {
     int lineno_width = 1;
     if (E.numrows > 0) {
         int max_lineno = E.numrows;
-        lineno_width = 1;
-        while (max_lineno >= 10) {
+        lineno_width = 0;
+        while (max_lineno > 0) {
             lineno_width++;
             max_lineno /= 10;
         }
@@ -919,7 +919,6 @@ void editorRefreshScreen(void) {
         }
 
         r = &E.row[filerow];
-
         int len = r->rsize - E.coloff;
         int current_color = -1;
         // Print line number
@@ -1003,8 +1002,8 @@ void editorRefreshScreen(void) {
     int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
         E.filename ? E.filename : "[No Name]", E.numrows,
         E.dirty ? "(modified)" : "");
-    snprintf(rstatus, sizeof(rstatus), "Col %d | Ln %d/%d",
-        E.cx + 1, E.cy + 1, E.numrows);
+    int rlen = snprintf(rstatus, sizeof(rstatus),
+        "%d/%d", E.rowoff+E.cy+1, E.numrows);
     if (len > E.screencols) len = E.screencols;
     abAppend(&ab,status,len);
     while (len < E.screencols) {
