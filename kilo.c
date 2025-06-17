@@ -931,11 +931,16 @@ void editorRefreshScreen(void) {
         // Highlight active line
         if (y == E.cy) abAppend(&ab, "\x1b[7m", 4); // reverse video
         if (len > 0) {
+            // Do not truncate at colorcolumn, always show up to screencols
             if (len > E.screencols - lineno_width) len = E.screencols - lineno_width;
             char *c = r->render+E.coloff;
             unsigned char *hl = r->hl+E.coloff;
             int j;
-            for (j = 0; j < len; j++) {
+            int screen_col = lineno_width; // screen column index (starts after line number)
+            for (j = 0; j < len; j++, screen_col++) {
+                // Draw text (even if over the bar)
+                int is_colorcol = (screen_col == 80);
+                if (is_colorcol) abAppend(&ab, "\x1b[7m", 4); // reverse video for colorcolumn
                 if (hl[j] == HL_NONPRINT) {
                     char sym;
                     abAppend(&ab,"\x1b[7m",4);
@@ -961,6 +966,28 @@ void editorRefreshScreen(void) {
                     }
                     abAppend(&ab,c+j,1);
                 }
+                if (is_colorcol) abAppend(&ab, "\x1b[0m", 4); // reset after colorcolumn
+            }
+            // If line is shorter than colorcolumn, still draw the bar
+            if (screen_col <= 80 && (E.screencols - lineno_width) >= 80) {
+                int pad = 80 - screen_col;
+                while (pad-- > 0) {
+                    abAppend(&ab, " ", 1);
+                    screen_col++;
+                }
+                // Draw a vertical bar at column 80 as background highlight
+                abAppend(&ab, "\x1b[7m \x1b[0m", 9);
+            }
+        } else {
+            // If empty line, still draw colorcolumn if visible
+            int screen_col = lineno_width;
+            if ((E.screencols - lineno_width) >= 80) {
+                int pad = 80 - screen_col;
+                while (pad-- > 0) {
+                    abAppend(&ab, " ", 1);
+                    screen_col++;
+                }
+                abAppend(&ab, "\x1b[7m \x1b[0m", 9);
             }
         }
         abAppend(&ab,"\x1b[39m",5);
