@@ -928,7 +928,7 @@ void editorRefreshScreen(void) {
         abAppend(&ab, lnbuf, lnbuflen);
         abAppend(&ab, "\x1b[39m", 5); // reset color
         // Highlight active line
-        if (y == E.cy) abAppend(&ab, "\x1b[7m", 4); // reverse video
+        /* if (y == E.cy) abAppend(&ab, "\x1b[7m", 4); // reverse video */
         if (len > 0) {
             // Do not truncate at colorcolumn, always show up to screencols
             if (len > E.screencols - lineno_width) len = E.screencols - lineno_width;
@@ -1002,7 +1002,7 @@ void editorRefreshScreen(void) {
     int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
         E.filename ? E.filename : "[No Name]", E.numrows,
         E.dirty ? "(modified)" : "");
-    snprintf(rstatus, sizeof(rstatus), "%d/%d", E.rowoff+E.cy+1, E.numrows);
+    snprintf(rstatus, sizeof(rstatus), "%d:%d", E.rowoff+E.cy+1, E.coloff+E.cx+1);
     if (len > E.screencols) len = E.screencols;
     abAppend(&ab,status,len);
     while (len < E.screencols) {
