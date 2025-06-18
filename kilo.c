@@ -109,10 +109,14 @@ struct editorConfig {
     char statusmsg[80];
     time_t statusmsg_time;
     struct editorSyntax *syntax;    /* Current syntax highlight, or NULL. */
+    char lineno_buf[16];            /* Buffer for line number input */
+    int lineno_len;                 /* Length of line number buffer */
+    int d_pressed;                  /* Track if 'd' was pressed for dd command */
+    time_t d_press_time;            /* Time when 'd' was pressed */
 };
 
 static struct editorConfig E;
-                                                        
+
 enum KEY_ACTION{
         KEY_NULL = 0,       /* NULL */
         CTRL_C = 3,         /* Ctrl-c */
@@ -127,6 +131,7 @@ enum KEY_ACTION{
         CTRL_U = 21,        /* Ctrl-u */
         ESC = 27,           /* Escape */
         BACKSPACE =  127,   /* Backspace */
+        SHIFT_G = 'G',      /* Shift+G for go to line */
         /* The following are just soft codes, not really reported by the
          * terminal directly. */
         ARROW_LEFT = 1000,
@@ -1062,6 +1067,61 @@ void editorSetStatusMessage(const char *fmt, ...) {
 
 #define KILO_QUERY_LEN 256
 
+/* Delete the current line where the cursor is located */
+void editorDeleteCurrentLine(void) {
+    int filerow = E.rowoff + E.cy;
+
+    /* If no rows exist, nothing to delete */
+    if (E.numrows == 0) return;
+
+    /* If cursor is beyond the file, nothing to delete */
+    if (filerow >= E.numrows) return;
+
+    /* Delete the row */
+    editorDelRow(filerow);
+
+    /* Adjust cursor position after deletion */
+    if (E.numrows == 0) {
+        /* File is now empty, reset cursor */
+        E.cy = 0;
+        E.cx = 0;
+        E.rowoff = 0;
+        E.coloff = 0;
+    } else if (filerow >= E.numrows) {
+        /* Cursor was on last line, move up */
+        if (E.cy > 0) {
+            E.cy--;
+        } else if (E.rowoff > 0) {
+            E.rowoff--;
+        }
+    }
+
+    /* Reset cursor to beginning of line */
+    E.cx = 0;
+    E.coloff = 0;
+}
+
+/* Go to the specified line number */
+void editorGoToLine(int line) {
+    if (line <= 0) line = 1;
+    if (line > E.numrows) line = E.numrows;
+
+    /* Convert to 0-based indexing */
+    line--;
+
+    /* Set cursor to beginning of the target line */
+    E.cy = 0;
+    E.cx = 0;
+    E.rowoff = line;
+    E.coloff = 0;
+
+    /* If the line is visible on screen, adjust cy instead of rowoff */
+    if (line < E.screenrows) {
+        E.cy = line;
+        E.rowoff = 0;
+    }
+}
+
 void editorFind(int fd) {
     char query[KILO_QUERY_LEN+1] = {0};
     int qlen = 0;
@@ -1341,8 +1401,46 @@ void editorProcessKeypress(int fd) {
         }
         break;
     }
+    case SHIFT_G:
+        /* Go to line number if digits were accumulated */
+        if (E.lineno_len > 0) {
+            E.lineno_buf[E.lineno_len] = '\0';
+            int line = atoi(E.lineno_buf);
+            editorGoToLine(line);
+            E.lineno_len = 0; /* Reset buffer */
+            editorSetStatusMessage("Moved to line %d", line);
+        }
+        break;
+    case 'd':
+        /* Handle dd command for deleting current line */
+        if (E.d_pressed && (time(NULL) - E.d_press_time) <= 1) {
+            /* Second 'd' pressed within 1 second - delete current line */
+            editorDeleteCurrentLine();
+            editorSetStatusMessage("Line deleted");
+            E.d_pressed = 0; /* Reset */
+        } else {
+            /* First 'd' pressed */
+            E.d_pressed = 1;
+            E.d_press_time = time(NULL);
+            editorSetStatusMessage("Press 'd' again to delete line");
+        }
+        break;
     default:
-        editorInsertChar(c);
+        /* Reset d_pressed if any other key is pressed */
+        E.d_pressed = 0;
+
+        /* Check if it's a digit for line number input */
+        if (c >= '0' && c <= '9' && E.lineno_len < 15) {
+            E.lineno_buf[E.lineno_len++] = c;
+            editorSetStatusMessage("Go to line: %.*s", E.lineno_len, E.lineno_buf);
+        } else {
+            /* Reset line number buffer if non-digit character */
+            if (E.lineno_len > 0) {
+                E.lineno_len = 0;
+                editorSetStatusMessage("");
+            }
+            editorInsertChar(c);
+        }
         break;
     }
 
@@ -1379,6 +1477,8 @@ void initEditor(void) {
     E.dirty = 0;
     E.filename = NULL;
     E.syntax = NULL;
+    E.lineno_len = 0;
+    E.d_pressed = 0;
     updateWindowSize();
     signal(SIGWINCH, handleSigWinCh);
 }
