@@ -68,6 +68,8 @@
 #define HL_HIGHLIGHT_STRINGS (1<<0)
 #define HL_HIGHLIGHT_NUMBERS (1<<1)
 
+#define TAB_SIZE 4
+
 struct editorSyntax {
     char **filematch;
     char **keywords;
@@ -110,7 +112,7 @@ struct editorConfig {
 };
 
 static struct editorConfig E;
-
+                                                        
 enum KEY_ACTION{
         KEY_NULL = 0,       /* NULL */
         CTRL_C = 3,         /* Ctrl-c */
@@ -270,9 +272,13 @@ int editorReadKey(int fd) {
                     if (read(fd,seq+2,1) == 0) return ESC;
                     if (seq[2] == '~') {
                         switch(seq[1]) {
+                        case '1': return HOME_KEY;
                         case '3': return DEL_KEY;
+                        case '4': return END_KEY;
                         case '5': return PAGE_UP;
                         case '6': return PAGE_DOWN;
+                        case '7': return HOME_KEY;
+                        case '8': return END_KEY;
                         }
                     }
                 } else {
@@ -1288,9 +1294,53 @@ void editorProcessKeypress(int fd) {
     case CTRL_L: /* ctrl+l, clear screen */
         /* Just refresht the line as side effect. */
         break;
+    case TAB:
+        /* Insert 4 spaces instead of a tab character */
+        for (int i = 0; i < TAB_SIZE; i++) editorInsertChar(' ');
+        break;
     case ESC:
         /* Nothing to do for ESC in this mode. */
         break;
+    case END_KEY: {
+        int filerow = E.rowoff + E.cy;
+        if (filerow < E.numrows) {
+            erow *row = &E.row[filerow];
+            int end = row->rsize; // use rendered size for cursor position
+            // If end is before current coloff, reset coloff/cx
+            if (end < E.coloff) {
+                E.coloff = 0;
+                E.cx = 0;
+            } else if (end >= E.coloff + E.screencols) {
+                E.coloff = end - E.screencols + 1;
+                E.cx = E.screencols - 1;
+            } else {
+                E.cx = end - E.coloff;
+            }
+        }
+        break;
+    }
+    case HOME_KEY: {
+        int filerow = E.rowoff + E.cy;
+        if (filerow < E.numrows) {
+            erow *row = &E.row[filerow];
+            int first_nonspace = 0;
+            while (first_nonspace < row->size && (row->chars[first_nonspace] == ' ' || row->chars[first_nonspace] == '\t'))
+                first_nonspace++;
+            if (first_nonspace >= E.coloff + E.screencols) {
+                E.coloff = first_nonspace - E.screencols + 1;
+                E.cx = E.screencols - 1;
+            } else if (first_nonspace < E.coloff) {
+                E.coloff = first_nonspace;
+                E.cx = 0;
+            } else {
+                E.cx = first_nonspace - E.coloff;
+            }
+        } else {
+            E.coloff = 0;
+            E.cx = 0;
+        }
+        break;
+    }
     default:
         editorInsertChar(c);
         break;
