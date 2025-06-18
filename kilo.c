@@ -70,6 +70,26 @@
 
 #define TAB_SIZE 4
 
+/* Undo operation types */
+enum undo_type {
+    UNDO_DELETE_LINE,
+    UNDO_DELETE_CHAR,
+    UNDO_INSERT_CHAR,
+    UNDO_INSERT_LINE
+};
+
+/* Undo operation structure */
+typedef struct undo_op {
+    enum undo_type type;
+    int row;                    /* Row where operation occurred */
+    int col;                    /* Column where operation occurred */
+    char *data;                 /* Data for the operation (deleted text, etc.) */
+    int data_len;               /* Length of data */
+    struct undo_op *next;       /* Next operation in the stack */
+} undo_op;
+
+#define MAX_UNDO_STACK 100
+
 struct editorSyntax {
     char **filematch;
     char **keywords;
@@ -113,6 +133,8 @@ struct editorConfig {
     int lineno_len;                 /* Length of line number buffer */
     int d_pressed;                  /* Track if 'd' was pressed for dd command */
     time_t d_press_time;            /* Time when 'd' was pressed */
+    undo_op *undo_stack;            /* Stack of undo operations */
+    int undo_count;                 /* Number of operations in undo stack */
 };
 
 static struct editorConfig E;
@@ -142,10 +164,16 @@ enum KEY_ACTION{
         HOME_KEY,
         END_KEY,
         PAGE_UP,
-        PAGE_DOWN
+        PAGE_DOWN,
+        UNDO_KEY            /* ESC+u for undo */
 };
 
 void editorSetStatusMessage(const char *fmt, ...);
+
+/* Undo function declarations */
+void pushUndoOp(enum undo_type type, int row, int col, char *data, int data_len);
+void executeUndo(void);
+void clearUndoStack(void);
 
 /* =========================== Syntax highlights DB =========================
  *
@@ -268,6 +296,13 @@ int editorReadKey(int fd) {
         case ESC:    /* escape sequence */
             /* If this is just an ESC, we'll timeout here. */
             if (read(fd,seq,1) == 0) return ESC;
+
+            /* Check for single character commands first */
+            if (seq[0] == 'u') {
+                return UNDO_KEY;
+            }
+
+            /* For multi-character sequences, read second character */
             if (read(fd,seq+1,1) == 0) return ESC;
 
             /* ESC [ sequences. */
@@ -723,6 +758,8 @@ void editorInsertChar(int c) {
             editorInsertRow(E.numrows,"",0);
     }
     row = &E.row[filerow];
+    /* Save insert operation for undo */
+    pushUndoOp(UNDO_INSERT_CHAR, filerow, filecol, NULL, 0);
     editorRowInsertChar(row,filecol,c);
     if (E.cx == E.screencols-1)
         E.coloff++;
@@ -793,6 +830,11 @@ void editorDelChar(void) {
             E.coloff += shift;
         }
     } else {
+        /* Save character for undo before deleting */
+        if (filecol > 0 && filecol <= row->size) {
+            char deleted_char = row->chars[filecol-1];
+            pushUndoOp(UNDO_DELETE_CHAR, filerow, filecol-1, &deleted_char, 1);
+        }
         editorRowDelChar(row,filecol-1);
         if (E.cx == 0 && E.coloff)
             E.coloff--;
@@ -1063,6 +1105,138 @@ void editorSetStatusMessage(const char *fmt, ...) {
     E.statusmsg_time = time(NULL);
 }
 
+/* =============================== Undo functionality ====================== */
+
+/* Push an operation onto the undo stack */
+void pushUndoOp(enum undo_type type, int row, int col, char *data, int data_len) {
+    /* Limit undo stack size */
+    if (E.undo_count >= MAX_UNDO_STACK) {
+        /* Remove oldest operation */
+        undo_op *oldest = E.undo_stack;
+        while (oldest && oldest->next && oldest->next->next) {
+            oldest = oldest->next;
+        }
+        if (oldest && oldest->next) {
+            undo_op *to_remove = oldest->next;
+            oldest->next = NULL;
+            free(to_remove->data);
+            free(to_remove);
+            E.undo_count--;
+        }
+    }
+
+    /* Create new undo operation */
+    undo_op *op = malloc(sizeof(undo_op));
+    op->type = type;
+    op->row = row;
+    op->col = col;
+    op->data_len = data_len;
+    if (data && data_len > 0) {
+        op->data = malloc(data_len + 1);
+        memcpy(op->data, data, data_len);
+        op->data[data_len] = '\0';
+    } else {
+        op->data = NULL;
+    }
+
+    /* Push to front of stack */
+    op->next = E.undo_stack;
+    E.undo_stack = op;
+    E.undo_count++;
+}
+
+/* Pop and execute an undo operation */
+void executeUndo(void) {
+    if (!E.undo_stack) {
+        editorSetStatusMessage("Nothing to undo");
+        return;
+    }
+
+    undo_op *op = E.undo_stack;
+    E.undo_stack = op->next;
+    E.undo_count--;
+
+    switch (op->type) {
+        case UNDO_DELETE_LINE:
+            /* Restore deleted line */
+            if (op->data) {
+                editorInsertRow(op->row, op->data, op->data_len);
+                /* Move cursor to the restored line */
+                E.cy = 0;
+                E.cx = 0;
+                E.rowoff = op->row;
+                E.coloff = 0;
+                if (op->row < E.screenrows) {
+                    E.cy = op->row;
+                    E.rowoff = 0;
+                }
+                editorSetStatusMessage("Line restored");
+            }
+            break;
+        case UNDO_DELETE_CHAR:
+            /* Restore deleted character */
+            if (op->data && op->row < E.numrows) {
+                erow *row = &E.row[op->row];
+                editorRowInsertChar(row, op->col, op->data[0]);
+                /* Move cursor to after the restored character */
+                E.cy = op->row - E.rowoff;
+                E.cx = op->col + 1;
+                if (E.cy < 0) {
+                    E.rowoff += E.cy;
+                    E.cy = 0;
+                } else if (E.cy >= E.screenrows) {
+                    E.rowoff += E.cy - E.screenrows + 1;
+                    E.cy = E.screenrows - 1;
+                }
+                editorSetStatusMessage("Character restored");
+            }
+            break;
+        case UNDO_INSERT_CHAR:
+            /* Remove inserted character */
+            if (op->row < E.numrows) {
+                erow *row = &E.row[op->row];
+                if (op->col < row->size) {
+                    editorRowDelChar(row, op->col);
+                    /* Move cursor to the deletion point */
+                    E.cy = op->row - E.rowoff;
+                    E.cx = op->col;
+                    editorSetStatusMessage("Character insertion undone");
+                }
+            }
+            break;
+        case UNDO_INSERT_LINE:
+            /* Remove inserted line */
+            if (op->row < E.numrows) {
+                editorDelRow(op->row);
+                /* Adjust cursor position */
+                if (op->row <= E.rowoff + E.cy) {
+                    if (E.cy > 0) {
+                        E.cy--;
+                    } else if (E.rowoff > 0) {
+                        E.rowoff--;
+                    }
+                }
+                editorSetStatusMessage("Line insertion undone");
+            }
+            break;
+    }
+
+    /* Clean up */
+    free(op->data);
+    free(op);
+}
+
+/* Clear all undo operations */
+void clearUndoStack(void) {
+    while (E.undo_stack) {
+        undo_op *op = E.undo_stack;
+        E.undo_stack = op->next;
+        free(op->data);
+        free(op);
+    }
+    E.undo_count = 0;
+}
+
 /* =============================== Find mode ================================ */
 
 #define KILO_QUERY_LEN 256
@@ -1076,6 +1250,10 @@ void editorDeleteCurrentLine(void) {
 
     /* If cursor is beyond the file, nothing to delete */
     if (filerow >= E.numrows) return;
+
+    /* Save the line content for undo */
+    erow *row = &E.row[filerow];
+    pushUndoOp(UNDO_DELETE_LINE, filerow, 0, row->chars, row->size);
 
     /* Delete the row */
     editorDelRow(filerow);
@@ -1411,6 +1589,9 @@ void editorProcessKeypress(int fd) {
             editorSetStatusMessage("Moved to line %d", line);
         }
         break;
+    case UNDO_KEY:
+        executeUndo();
+        break;
     case 'd':
         /* Handle dd command for deleting current line */
         if (E.d_pressed && (time(NULL) - E.d_press_time) <= 1) {
@@ -1479,6 +1660,8 @@ void initEditor(void) {
     E.syntax = NULL;
     E.lineno_len = 0;
     E.d_pressed = 0;
+    E.undo_stack = NULL;
+    E.undo_count = 0;
     updateWindowSize();
     signal(SIGWINCH, handleSigWinCh);
 }
