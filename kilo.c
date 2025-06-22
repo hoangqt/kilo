@@ -1510,17 +1510,19 @@ void editorProcessKeypress(int fd) {
     case DEL_KEY:
         editorDelChar();
         break;
+    case CTRL_U:        /* Ctrl-u for page up */
     case PAGE_UP:
     case PAGE_DOWN:
-        if (c == PAGE_UP && E.cy != 0)
+    case CTRL_D:        /* Ctrl-d for page down */
+        if ((c == PAGE_UP || c == CTRL_U) && E.cy != 0)
             E.cy = 0;
-        else if (c == PAGE_DOWN && E.cy != E.screenrows-1)
+        else if ((c == PAGE_DOWN || c == CTRL_D) && E.cy != E.screenrows-1)
             E.cy = E.screenrows-1;
         {
         int times = E.screenrows;
         while(times--)
-            editorMoveCursor(c == PAGE_UP ? ARROW_UP:
-                                            ARROW_DOWN);
+            editorMoveCursor((c == PAGE_UP || c == CTRL_U) ? ARROW_UP:
+                                                             ARROW_DOWN);
         }
         break;
 
