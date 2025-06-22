@@ -1482,6 +1482,7 @@ void editorProcessKeypress(int fd) {
     int c = editorReadKey(fd);
     switch(c) {
     case ENTER:         /* Enter */
+        E.d_pressed = 0;
         editorInsertNewline();
         break;
     case CTRL_C:        /* Ctrl-c */
@@ -1498,7 +1499,7 @@ void editorProcessKeypress(int fd) {
         }
         exit(0);
         break;
-    case CTRL_S:        /* Ctrl-s */
+    case CTRL_S:
         editorSave();
         break;
     case CTRL_F:
@@ -1527,6 +1528,7 @@ void editorProcessKeypress(int fd) {
     case ARROW_DOWN:
     case ARROW_LEFT:
     case ARROW_RIGHT:
+        E.d_pressed = 0; /* Reset d state */
         editorMoveCursor(c);
         break;
     case CTRL_L: /* ctrl+l, clear screen */
@@ -1590,20 +1592,21 @@ void editorProcessKeypress(int fd) {
         }
         break;
     case UNDO_KEY:
+        E.d_pressed = 0;
         executeUndo();
         break;
     case 'd':
-        /* Handle dd command for deleting current line */
         if (E.d_pressed && (time(NULL) - E.d_press_time) <= 1) {
-            /* Second 'd' pressed within 1 second - delete current line */
+            /* Second 'd' pressed within 1 second - delete the 'd' we just inserted and delete the line */
+            editorDelChar(); /* Remove the 'd' we just inserted */
             editorDeleteCurrentLine();
             editorSetStatusMessage("Line deleted");
-            E.d_pressed = 0; /* Reset */
+            E.d_pressed = 0; 
         } else {
-            /* First 'd' pressed */
+            /* First 'd' or timeout - insert 'd' character immediately */
+            editorInsertChar('d');
             E.d_pressed = 1;
             E.d_press_time = time(NULL);
-            editorSetStatusMessage("Press 'd' again to delete line");
         }
         break;
     default:
