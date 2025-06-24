@@ -991,11 +991,33 @@ void editorRefreshScreen(void) {
             unsigned char *hl = r->hl+E.coloff;
             int j;
             int screen_col = lineno_width; // screen column index (starts after line number)
-            for (j = 0; j < len; j++, screen_col++) {
+            int source_col = E.coloff; // actual column in source text
+            
+            for (j = 0; j < len; j++, screen_col++, source_col++) {
+                // Check if we should draw an indent guide
+                int should_draw_indent_guide = 0;
+                if (c[j] == ' ' && source_col % TAB_SIZE == 0 && source_col > 0) {
+                    // Check if this is part of leading whitespace
+                    int is_leading_space = 1;
+                    for (int k = 0; k < source_col; k++) {
+                        if (k + E.coloff < r->rsize && r->render[k + E.coloff] != ' ') {
+                            is_leading_space = 0;
+                            break;
+                        }
+                    }
+                    should_draw_indent_guide = is_leading_space;
+                }
+                
                 // Draw text (even if over the bar)
                 int is_colorcol = (screen_col == 80);
                 if (is_colorcol) abAppend(&ab, "\x1b[7m", 4); // reverse video for colorcolumn
-                if (hl[j] == HL_NONPRINT) {
+                
+                if (should_draw_indent_guide) {
+                    // Draw indent guide with dim color
+                    abAppend(&ab, "\x1b[2m", 4); // dim
+                    abAppend(&ab, "|", 1);
+                    abAppend(&ab, "\x1b[0m", 4); // reset
+                } else if (hl[j] == HL_NONPRINT) {
                     char sym;
                     abAppend(&ab,"\x1b[7m",4);
                     if (c[j] <= 26)
@@ -1033,8 +1055,43 @@ void editorRefreshScreen(void) {
                 abAppend(&ab, "\x1b[7m \x1b[0m", 9);
             }
         } else {
-            // If empty line, still draw colorcolumn if visible
+            // If empty line, still draw colorcolumn and indent guides if visible
             int screen_col = lineno_width;
+            int source_col = E.coloff;
+            
+            // For empty lines, draw indent guides based on surrounding context
+            if (r->size == 0 && filerow > 0 && filerow < E.numrows - 1) {
+                // Look for indent level from previous or next non-empty line
+                int indent_level = 0;
+                for (int search_row = filerow - 1; search_row >= 0; search_row--) {
+                    if (E.row[search_row].size > 0) {
+                        // Count leading spaces in this line
+                        for (int i = 0; i < E.row[search_row].size; i++) {
+                            if (E.row[search_row].chars[i] == ' ') {
+                                indent_level++;
+                            } else {
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+                
+                // Draw indent guides for empty line
+                while (source_col < indent_level && screen_col < E.screencols) {
+                    if (source_col % TAB_SIZE == 0 && source_col > 0) {
+                        abAppend(&ab, "\x1b[2m", 4); // dim
+                        abAppend(&ab, "|", 1);
+                        abAppend(&ab, "\x1b[0m", 4); // reset
+                    } else {
+                        abAppend(&ab, " ", 1);
+                    }
+                    source_col++;
+                    screen_col++;
+                }
+            }
+            
+            // Fill remaining space and draw colorcolumn if visible
             if ((E.screencols - lineno_width) >= 80) {
                 int pad = 80 - screen_col;
                 while (pad-- > 0) {
