@@ -32,7 +32,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define KILO_VERSION "0.0.1"
+#define KILO_VERSION "0.0.2"
 
 #ifdef __linux__
 #define _POSIX_C_SOURCE 200809L
@@ -705,6 +705,8 @@ char *editorRowsToString(int *buflen) {
 /* Insert a character at the specified position in a row, moving the remaining
  * chars on the right if needed. */
 void editorRowInsertChar(erow *row, int at, int c) {
+    if (row == NULL) return;
+
     if (at > row->size) {
         /* Pad the string with spaces if the insert location is outside the
          * current length by more than a single character. */
