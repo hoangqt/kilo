@@ -32,7 +32,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define KILO_VERSION "0.0.2"
+#define KILO_VERSION "0.0.3"
 
 #ifdef __linux__
 #define _POSIX_C_SOURCE 200809L
@@ -154,7 +154,7 @@ enum KEY_ACTION{
         CTRL_U = 21,        /* Ctrl-u */
         ESC = 27,           /* Escape */
         BACKSPACE =  127,   /* Backspace */
-        SHIFT_G = 'G',      /* Shift+G for go to line */
+        CTRL_G = 7,         /* Ctrl-g */
         /* The following are just soft codes, not really reported by the
          * terminal directly. */
         ARROW_LEFT = 1000,
@@ -1480,6 +1480,48 @@ void editorGoToLine(int line) {
     }
 }
 
+void editorGoTo(int fd);
+
+void editorGoTo(int fd) {
+    char query[KILO_QUERY_LEN+1] = {0};
+    int qlen = 0;
+    int saved_cx = E.cx, saved_cy = E.cy;
+    int saved_coloff = E.coloff, saved_rowoff = E.rowoff;
+
+    while(1) {
+        editorSetStatusMessage(
+            "Go to line: %s (Use ESC/Enter)", query);
+        editorRefreshScreen();
+
+        int c = editorReadKey(fd);
+        if (c == DEL_KEY || c == CTRL_H || c == BACKSPACE) {
+            if (qlen != 0) {
+                query[--qlen] = '\0';
+                if (qlen > 0) {
+                    editorGoToLine(atoi(query));
+                } else {
+                    E.cx = saved_cx; E.cy = saved_cy;
+                    E.coloff = saved_coloff; E.rowoff = saved_rowoff;
+                }
+            }
+        } else if (c == ESC) {
+            E.cx = saved_cx; E.cy = saved_cy;
+            E.coloff = saved_coloff; E.rowoff = saved_rowoff;
+            editorSetStatusMessage("");
+            return;
+        } else if (c == ENTER) {
+            editorSetStatusMessage("");
+            return;
+        } else if (isdigit(c)) {
+            if (qlen < KILO_QUERY_LEN) {
+                query[qlen++] = c;
+                query[qlen] = '\0';
+                editorGoToLine(atoi(query));
+            }
+        }
+    }
+}
+
 void editorFind(int fd) {
     char query[KILO_QUERY_LEN+1] = {0};
     int qlen = 0;
@@ -1763,15 +1805,8 @@ void editorProcessKeypress(int fd) {
         }
         break;
     }
-    case SHIFT_G:
-        /* Go to line number if digits were accumulated */
-        if (E.lineno_len > 0) {
-            E.lineno_buf[E.lineno_len] = '\0';
-            int line = atoi(E.lineno_buf);
-            editorGoToLine(line);
-            E.lineno_len = 0; /* Reset buffer */
-            editorSetStatusMessage("Moved to line %d", line);
-        }
+    case CTRL_G:
+        editorGoTo(fd);
         break;
     case UNDO_KEY:
         E.d_pressed = 0;
@@ -1794,19 +1829,7 @@ void editorProcessKeypress(int fd) {
     default:
         /* Reset d_pressed if any other key is pressed */
         E.d_pressed = 0;
-
-        /* Check if it's a digit for line number input */
-        if (c >= '0' && c <= '9' && E.lineno_len < 15) {
-            E.lineno_buf[E.lineno_len++] = c;
-            editorSetStatusMessage("Go to line: %.*s", E.lineno_len, E.lineno_buf);
-        } else {
-            /* Reset line number buffer if non-digit character */
-            if (E.lineno_len > 0) {
-                E.lineno_len = 0;
-                editorSetStatusMessage("");
-            }
-            editorInsertChar(c);
-        }
+        editorInsertChar(c);
         break;
     }
 
