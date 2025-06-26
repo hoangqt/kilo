@@ -64,6 +64,7 @@
 #define HL_STRING 6
 #define HL_NUMBER 7
 #define HL_MATCH 8      /* Search match. */
+#define HL_UNDERLINE 9  /* Word under cursor match. */
 
 #define HL_HIGHLIGHT_STRINGS (1<<0)
 #define HL_HIGHLIGHT_NUMBERS (1<<1)
@@ -169,6 +170,10 @@ enum KEY_ACTION{
 };
 
 void editorSetStatusMessage(const char *fmt, ...);
+
+/* Word highlighting function declarations */
+void editorHighlightWordUnderCursor(void);
+int editorGetWordAtCursor(char *word, int *start_pos, int *end_pos);
 
 /* Undo function declarations */
 void pushUndoOp(enum undo_type type, int row, int col, char *data, int data_len);
@@ -572,6 +577,7 @@ int editorSyntaxToColor(int hl) {
     case HL_STRING: return 35;      /* magenta */
     case HL_NUMBER: return 31;      /* red */
     case HL_MATCH: return 34;      /* blu */
+    case HL_UNDERLINE: return 37;  /* white with underline */
     default: return 37;             /* white */
     }
 }
@@ -940,6 +946,9 @@ void editorRefreshScreen(void) {
     char buf[32];
     struct abuf ab = ABUF_INIT;
 
+    /* Highlight word under cursor */
+    editorHighlightWordUnderCursor();
+
     abAppend(&ab,"\x1b[?25l",6); /* Hide cursor. */
     abAppend(&ab,"\x1b[H",3); /* Go home. */
     int lineno_width = 1;
@@ -992,7 +1001,7 @@ void editorRefreshScreen(void) {
             int j;
             int screen_col = lineno_width; // screen column index (starts after line number)
             int source_col = E.coloff; // actual column in source text
-            
+
             for (j = 0; j < len; j++, screen_col++, source_col++) {
                 // Check if we should draw an indent guide
                 int should_draw_indent_guide = 0;
@@ -1007,11 +1016,11 @@ void editorRefreshScreen(void) {
                     }
                     should_draw_indent_guide = is_leading_space;
                 }
-                
+
                 // Draw text (even if over the bar)
                 int is_colorcol = (screen_col == 80);
                 if (is_colorcol) abAppend(&ab, "\x1b[7m", 4); // reverse video for colorcolumn
-                
+
                 if (should_draw_indent_guide) {
                     // Draw indent guide with dim color
                     abAppend(&ab, "\x1b[2m", 4); // dim
@@ -1036,11 +1045,24 @@ void editorRefreshScreen(void) {
                     int color = editorSyntaxToColor(hl[j]);
                     if (color != current_color) {
                         char buf[16];
-                        int clen = snprintf(buf,sizeof(buf),"\x1b[%dm",color);
+                        int clen;
+                        if (hl[j] == HL_UNDERLINE) {
+                            /* Add underline formatting */
+                            clen = snprintf(buf,sizeof(buf),"\x1b[%d;4m",color);
+                        } else {
+                            clen = snprintf(buf,sizeof(buf),"\x1b[%dm",color);
+                        }
                         current_color = color;
                         abAppend(&ab,buf,clen);
+                    } else if (hl[j] == HL_UNDERLINE) {
+                        /* Add underline to existing color */
+                        abAppend(&ab,"\x1b[4m",4);
                     }
                     abAppend(&ab,c+j,1);
+                    if (hl[j] == HL_UNDERLINE) {
+                        /* Reset underline */
+                        abAppend(&ab,"\x1b[24m",5);
+                    }
                 }
                 if (is_colorcol) abAppend(&ab, "\x1b[0m", 4); // reset after colorcolumn
             }
@@ -1058,7 +1080,7 @@ void editorRefreshScreen(void) {
             // If empty line, still draw colorcolumn and indent guides if visible
             int screen_col = lineno_width;
             int source_col = E.coloff;
-            
+
             // For empty lines, draw indent guides based on surrounding context
             if (r->size == 0 && filerow > 0 && filerow < E.numrows - 1) {
                 // Look for indent level from previous or next non-empty line
@@ -1076,7 +1098,7 @@ void editorRefreshScreen(void) {
                         break;
                     }
                 }
-                
+
                 // Draw indent guides for empty line
                 while (source_col < indent_level && screen_col < E.screencols) {
                     if (source_col % TAB_SIZE == 0 && source_col > 0) {
@@ -1090,7 +1112,7 @@ void editorRefreshScreen(void) {
                     screen_col++;
                 }
             }
-            
+
             // Fill remaining space and draw colorcolumn if visible
             if ((E.screencols - lineno_width) >= 80) {
                 int pad = 80 - screen_col;
@@ -1162,6 +1184,105 @@ void editorSetStatusMessage(const char *fmt, ...) {
     vsnprintf(E.statusmsg,sizeof(E.statusmsg),fmt,ap);
     va_end(ap);
     E.statusmsg_time = time(NULL);
+}
+
+/* =============================== Word highlighting ======================= */
+
+/* Get the word under the cursor. Returns 1 if a word is found, 0 otherwise. */
+int editorGetWordAtCursor(char *word, int *start_pos, int *end_pos) {
+    int filerow = E.rowoff + E.cy;
+    int filecol = E.coloff + E.cx;
+
+    if (filerow >= E.numrows) return 0;
+
+    erow *row = &E.row[filerow];
+    if (filecol >= row->size) return 0;
+
+    /* Check if cursor is on a word character */
+    if (!isalnum(row->chars[filecol]) && row->chars[filecol] != '_') return 0;
+
+    /* Find start of word */
+    int start = filecol;
+    while (start > 0 && (isalnum(row->chars[start-1]) || row->chars[start-1] == '_')) {
+        start--;
+    }
+
+    /* Find end of word */
+    int end = filecol;
+    while (end < row->size && (isalnum(row->chars[end]) || row->chars[end] == '_')) {
+        end++;
+    }
+
+    /* Extract word */
+    int word_len = end - start;
+    if (word_len > 255) word_len = 255; /* Limit word length */
+
+    strncpy(word, row->chars + start, word_len);
+    word[word_len] = '\0';
+
+    *start_pos = start;
+    *end_pos = end;
+
+    return word_len > 0 ? 1 : 0;
+}
+
+/* Highlight all occurrences of the word under cursor */
+void editorHighlightWordUnderCursor(void) {
+    char word[256];
+    int start_pos, end_pos;
+
+    /* Clear existing underline highlights */
+    for (int i = 0; i < E.numrows; i++) {
+        erow *row = &E.row[i];
+        if (row->hl) {
+            for (int j = 0; j < row->rsize; j++) {
+                if (row->hl[j] == HL_UNDERLINE) {
+                    row->hl[j] = HL_NORMAL;
+                }
+            }
+        }
+    }
+
+    /* Get word under cursor */
+    if (!editorGetWordAtCursor(word, &start_pos, &end_pos)) {
+        return; /* No word under cursor */
+    }
+
+    /* Highlight all matching words in all rows */
+    for (int i = 0; i < E.numrows; i++) {
+        erow *row = &E.row[i];
+        if (!row->render) continue;
+
+        char *match = row->render;
+        while ((match = strstr(match, word)) != NULL) {
+            /* Check if this is a whole word match */
+            int match_start = match - row->render;
+            int match_end = match_start + strlen(word);
+
+            /* Check boundaries */
+            int is_word_start = (match_start == 0 ||
+                               (!isalnum(row->render[match_start-1]) &&
+                                row->render[match_start-1] != '_'));
+            int is_word_end = (match_end >= row->rsize ||
+                             (!isalnum(row->render[match_end]) &&
+                              row->render[match_end] != '_'));
+
+            if (is_word_start && is_word_end && row->hl) {
+                /* Highlight this match */
+                for (int j = 0; j < (int)strlen(word) && match_start + j < row->rsize; j++) {
+                    /* Only highlight if it's not already a search match or special syntax */
+                    if (row->hl[match_start + j] != HL_MATCH &&
+                        row->hl[match_start + j] != HL_COMMENT &&
+                        row->hl[match_start + j] != HL_MLCOMMENT &&
+                        row->hl[match_start + j] != HL_STRING) {
+                        row->hl[match_start + j] = HL_UNDERLINE;
+                    }
+                }
+            }
+
+            match++; /* Move to next position */
+        }
+    }
 }
 
 /* =============================== Undo functionality ====================== */
@@ -1662,7 +1783,7 @@ void editorProcessKeypress(int fd) {
             editorDelChar(); /* Remove the 'd' we just inserted */
             editorDeleteCurrentLine();
             editorSetStatusMessage("Line deleted");
-            E.d_pressed = 0; 
+            E.d_pressed = 0;
         } else {
             /* First 'd' or timeout - insert 'd' character immediately */
             editorInsertChar('d');
