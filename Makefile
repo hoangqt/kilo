@@ -1,7 +1,7 @@
-TARGET=kilo
+TARGET?=kilo
 
 kilo: kilo.c
-	$(CC) -o $(TARGET) kilo.c -Wall -W -pedantic -std=c99
+	$(CC) -o $(TARGET) kilo.c -Wall -W -pedantic -std=c99 -target $(TARGET)
 
 clean:
 	rm $(TARGET)

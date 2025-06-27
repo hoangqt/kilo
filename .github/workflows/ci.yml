@@ -1,0 +1,33 @@
+name: C Project CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch:
+          - amd64
+          - arm64
+        include:
+          - arch: amd64
+            target: x86_64-apple-darwin
+          - arch: arm64
+            target: arm64-apple-darwin
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: false
+
+    - name: Set up environment
+      run: |
+        brew install llvm autoconf automake libtool
+
+    - name: Build project
+      run: make TARGET=${{ matrix.target }}
