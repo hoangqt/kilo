@@ -372,7 +372,7 @@ int getCursorPosition(int ifd, int ofd, int *rows, int *cols) {
 
     /* Parse it. */
     if (buf[0] != ESC || buf[1] != '[') return -1;
-    if (sscanf(buf+2,"%d;%d",rows,cols) != 2) return -1;
+    if (sscanf(buf+2,"%9d;%9d",rows,cols) != 2) return -1; // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
     return 0;
 }
 
@@ -431,7 +431,12 @@ int editorRowHasOpenComment(erow *row) {
 /* Set every byte of row->hl (that corresponds to every character in the line)
  * to the right syntax highlight type (HL_* defines). */
 void editorUpdateSyntax(erow *row) {
-    row->hl = realloc(row->hl,row->rsize);
+    if (row->rsize == 0) {
+        free(row->hl);
+        row->hl = NULL;
+    } else {
+        row->hl = realloc(row->hl,row->rsize);
+    }
     memset(row->hl,HL_NORMAL,row->rsize);
 
     if (E.syntax == NULL) return; /* No syntax, everything is HL_NORMAL. */
@@ -459,7 +464,7 @@ void editorUpdateSyntax(erow *row) {
     if (row->idx > 0 && editorRowHasOpenComment(&E.row[row->idx-1]))
         in_comment = 1;
 
-    while(*p) {
+    while(*p) { // NOLINT(clang-analyzer-core.uninitialized.Branch)
         /* Handle // comments. */
         if (prev_sep && *p == scs[0] && *(p+1) == scs[1]) {
             /* From here to end is a comment */
@@ -1876,7 +1881,7 @@ void initEditor(void) {
 
 int main(int argc, char **argv) {
     if (argc != 2) {
-        fprintf(stderr,"Usage: kilo <filename>\n");
+        fputs("Usage: kilo <filename>\n", stderr);
         exit(1);
     }
 

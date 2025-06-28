@@ -10,4 +10,7 @@ install:
 	chmod +x $(TARGET)
 	cp $(TARGET) /usr/local/bin
 
-.PHONY: kilo clean install
+lint:
+	clang-tidy kilo.c -- -Wall -W -pedantic -std=c99
+
+.PHONY: kilo clean install lint

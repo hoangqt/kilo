@@ -2,9 +2,11 @@ name: C Project CI
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
   pull_request:
-    branches: [ master ]
+    branches:
+      - master
 
 jobs:
   build:
@@ -21,13 +23,17 @@ jobs:
             target: arm64-apple-darwin
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: false
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
 
-    - name: Set up environment
-      run: |
-        brew install llvm autoconf automake libtool
+      - name: Setup
+        run: |
+          brew install llvm autoconf automake libtool
 
-    - name: Build project
-      run: make TARGET=${{ matrix.target }}
+      - name: Build
+        run: make TARGET=${{ matrix.target }}
+
+      - name: Lint
+        run: |
+          make lint
