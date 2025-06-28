@@ -13,4 +13,7 @@ install:
 lint:
 	clang-tidy kilo.c -- -Wall -W -pedantic -std=c99
 
-.PHONY: kilo clean install lint
+format:
+	clang-format -i kilo.c
+
+.PHONY: kilo clean install lint format

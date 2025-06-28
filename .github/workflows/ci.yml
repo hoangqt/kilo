@@ -33,9 +33,11 @@ jobs:
           ln -s "$(brew --prefix llvm)/bin/clang-tidy" "/usr/local/bin/clang-tidy"
           ln -s "$(brew --prefix llvm)/bin/clang-format" "/usr/local/bin/clang-format"
 
-      - name: Build
-        run: make TARGET=${{ matrix.target }}
+      - name: Format
+        run: make format
 
       - name: Lint
-        run: |
-          make lint
+        run: make lint
+
+      - name: Build
+        run: make TARGET=${{ matrix.target }}
