@@ -30,6 +30,8 @@ jobs:
       - name: Setup
         run: |
           brew install llvm autoconf automake libtool
+          ln -s "$(brew --prefix llvm)/bin/clang-tidy" "/usr/local/bin/clang-tidy"
+          ln -s "$(brew --prefix llvm)/bin/clang-format" "/usr/local/bin/clang-format"
 
       - name: Build
         run: make TARGET=${{ matrix.target }}
