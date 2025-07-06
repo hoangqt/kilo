@@ -1,7 +1,11 @@
 TARGET?=kilo
 
 kilo: kilo.c
+ifeq ($(CI),true)
 	$(CC) -o $(TARGET) kilo.c -Wall -W -pedantic -std=c99 -target $(TARGET)
+else
+	$(CC) -o $(TARGET) kilo.c -Wall -W -pedantic -std=c99
+endif
 
 clean:
 	rm $(TARGET)
