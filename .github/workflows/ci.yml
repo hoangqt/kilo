@@ -1,8 +1,9 @@
 name: C Project CI
 
-on:
 env:
   CI: true
+
+on:
   push:
     branches:
       - master
