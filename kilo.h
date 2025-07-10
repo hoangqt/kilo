@@ -101,6 +101,8 @@ struct editorConfig {
   int undo_count;              /* Number of operations in undo stack */
 };
 
+extern struct editorConfig E;
+
 enum KEY_ACTION {
   KEY_NULL = 0,    /* NULL */
   CTRL_C = 3,      /* Ctrl-c */

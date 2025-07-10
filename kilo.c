@@ -40,7 +40,7 @@
 
 #include "kilo.h"
 
-static struct editorConfig E;
+struct editorConfig E;
 
 /* =========================== Syntax highlights DB =========================
  *
@@ -537,7 +537,7 @@ void editorUpdateRow(erow *row) {
   for (j = 0; j < row->size; j++) {
     if (row->chars[j] == TAB) {
       row->render[idx++] = ' ';
-      while ((idx + 1) % 8 != 0)
+      while (idx % TAB_SIZE != 0)
         row->render[idx++] = ' ';
     } else {
       row->render[idx++] = row->chars[j];
@@ -1836,6 +1836,7 @@ void initEditor(void) {
   signal(SIGWINCH, handleSigWinCh);
 }
 
+#ifndef TEST_BUILD
 int main(int argc, char **argv) {
   if (argc != 2) {
     fputs("Usage: kilo <filename>\n", stderr);
@@ -1854,3 +1855,5 @@ int main(int argc, char **argv) {
   }
   return 0;
 }
+#endif
+
