@@ -13,9 +13,11 @@ Vibe coding mini features.
 - [x] highlight word under cursor
 - [x] dd to delete current line
 - [x] undo with esc-u
+- [x] del character under cursor
 
 ### Misc
 
 - [x] CI
 - [x] Linting
 - [x] Tests
+- [x] Gemini PR review
