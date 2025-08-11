@@ -773,6 +773,34 @@ void editorDelChar(void) {
   E.dirty++;
 }
 
+/* Delete the char at the current cursor position (forward delete). */
+void editorForwardDelChar(void) {
+  int filerow = E.rowoff + E.cy;
+  int filecol = E.coloff + E.cx;
+  erow *row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+
+  if (!row)
+    return;
+
+  // If the cursor is at the end of the file, do nothing.
+  if (filerow == E.numrows - 1 && filecol >= row->size)
+    return;
+
+  // If the cursor is at the end of a line (not the last one),
+  // we need to merge the next line with the current one.
+  if (filecol >= row->size) {
+    erow *next_row = &E.row[filerow + 1];
+    // Append the content of the next line to the current one.
+    editorRowAppendString(row, next_row->chars, next_row->size);
+    // Delete the next line.
+    editorDelRow(filerow + 1);
+  } else {
+    // If the cursor is not at the end of the line, just delete the character
+    // at the current cursor position.
+    editorRowDelChar(row, filecol);
+  }
+}
+
 /* Load the specified program in the editor memory and returns 0 on success
  * or 1 on error. */
 int editorOpen(char *filename) {
@@ -1689,8 +1717,10 @@ void editorProcessKeypress(int fd) {
     break;
   case BACKSPACE: /* Backspace */
   case CTRL_H:    /* Ctrl-h */
-  case DEL_KEY:
     editorDelChar();
+    break;
+  case DEL_KEY:
+    editorForwardDelChar();
     break;
   case CTRL_U: /* Ctrl-u for page up */
   case PAGE_UP:
@@ -1803,8 +1833,13 @@ int editorFileWasModified(void) { return E.dirty; }
 void updateWindowSize(void) {
   if (getWindowSize(STDIN_FILENO, STDOUT_FILENO, &E.screenrows,
                     &E.screencols) == -1) {
+#ifdef TEST_BUILD
+    E.screenrows = 24;
+    E.screencols = 80;
+#else
     perror("Unable to query the screen for size (columns / rows)");
     exit(1);
+#endif
   }
   E.screenrows -= 2; /* Get room for status bar. */
 }
